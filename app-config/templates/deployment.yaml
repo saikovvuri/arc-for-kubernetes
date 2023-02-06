@@ -1,0 +1,69 @@
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reviewer-api
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: reviewer-api
+  template:
+    metadata:
+      labels:
+        app: reviewer-api
+        aadpodidbinding: reviewer-api-label
+    spec:
+      containers:
+      - name: reviewer-api
+        image: ghcr.io/{{ .Values.release.repo }}/api:{{ .Values.release.name }}
+        ports:
+        - containerPort: 5000
+        env:
+        - name: "ASPNETCORE_ENVIRONMENT"
+          value: "Production"
+        - name: "ASPNETCORE_FORWARDEDHEADERS_ENABLED"
+          value: "true"
+        - name: "AllowedOrigin"
+          value: "https://{{ .Values.urlPrefix }}.cloudapp.azure.com/"
+        - name: "Authorization.Authority"
+          value: "https://login.microsoftonline.com/{{ .Values.tenantId }}/"
+        - name: "Authorization.Audience"
+          value: "{{ .Values.applicationClientID }}"
+        - name: "Storage__serviceUri"
+          value: "{{ .Values.storageURI }}"
+        - name: "ConnectionStrings__SQLDBConnectionString"
+          value: "{{ .Values.sqlConnectionString }}"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reviewer-ui
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: reviewer-ui
+  template:
+    metadata:
+      labels:
+        app: reviewer-ui
+        aadpodidbinding: reviewer-ui-label
+    spec:
+      containers:
+      - name: reviewer-ui
+        image: ghcr.io/{{ .Values.release.repo }}/ui:{{ .Values.release.name }}
+        ports:
+        - containerPort: 3000
+        env:
+        - name: "API_ENDPOINT"
+          value: "https://{{ .Values.urlPrefix }}.cloudapp.azure.com/api"
+        - name: "CLIENT_ID"
+          value: "{{ .Values.applicationClientID }}"
+        - name: "AUTHORITY"
+          value: "https://login.microsoftonline.com/{{ .Values.tenantId }}"
+        - name: "SCOPE"
+          value: "api://{{ .Values.applicationClientID }}/user_impersonation"

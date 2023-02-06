@@ -1,0 +1,10 @@
+---
+apiVersion: "aadpodidentity.k8s.io/v1"
+kind: AzurePodIdentityException
+metadata:
+  name: mic-exception
+  namespace: aad-pod-identity
+spec:
+  podLabels:
+    app: mic
+    component: mic

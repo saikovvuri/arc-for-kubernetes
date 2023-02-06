@@ -1,0 +1,25 @@
+---
+apiVersion: "aadpodidentity.k8s.io/v1"
+kind: AzureIdentity
+metadata:
+  annotations:
+    aadpodidentity.k8s.io/Behavior: namespaced 
+  name: reviewer-api-identity
+  namespace: {{ .Values.namespace }}
+spec:
+  type: 0 # MSI
+  resourceID: {{ .Values.identity.api.resource }}
+  clientID: {{ .Values.identity.api.client }}
+---
+apiVersion: "aadpodidentity.k8s.io/v1"
+kind: AzureIdentity
+metadata:
+  annotations:
+    aadpodidentity.k8s.io/Behavior: namespaced 
+  name: reviewer-ui-identity
+  namespace: {{ .Values.namespace }}
+spec:
+  type: 0 # MSI
+  resourceID: {{ .Values.identity.ui.resource }}
+  clientID: {{ .Values.identity.ui.client }}
+---

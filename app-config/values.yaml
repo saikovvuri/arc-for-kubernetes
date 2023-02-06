@@ -1,0 +1,23 @@
+# Default values for reviewer.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+namespace: app-dev-arc
+tenantId: common
+
+applicationClientID: PLACEHOLDER_APP_ID
+urlPrefix: PLACEHOLDER_URL_PREFIX
+storageURI: PLACEHOLDER_STORAGE_URL
+sqlConnectionString: PLACEHOLDER_SQL_CONNECTION_STRING
+
+release:
+  repo: jasoncabot-ms/reviewer
+  name: v1.5
+
+identity:
+  api:
+    resource: /subscriptions/PLACEHOLDER_SUBSCRIPTION_ID/resourceGroups/PLACEHOLDER_RESOURCE_GROUP/providers/Microsoft.ManagedIdentity/userAssignedIdentities/PLACEHOLDER_IDENTITY_NAME
+    client: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
+  ui:
+    resource: /subscriptions/PLACEHOLDER_SUBSCRIPTION_ID/resourceGroups/PLACEHOLDER_RESOURCE_GROUP/providers/Microsoft.ManagedIdentity/userAssignedIdentities/PLACEHOLDER_IDENTITY_NAME
+    client: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX

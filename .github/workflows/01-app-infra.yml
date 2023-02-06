@@ -1,0 +1,122 @@
+# This workflow will deploy the additional infrastructure required to run the reviewer application
+
+name: Deploy Infrastructure
+
+# Triggered manually
+on:
+  workflow_dispatch:
+    inputs:
+      credentials:
+        required: true
+        default: "AZURE_CREDENTIALS"
+        description: The name of the GitHub Secret to use for deployment
+      aad_admin_objectid:
+        required: true
+        description: The Azure AD Object ID of the SQL Server Database Administrator
+      app_id:
+        required: true
+        description: The Item Reviewer Application (client) ID from your Azure AD tenant
+      k8s_namespace:
+        required: true
+        default: app-dev-arc
+        description: The Kubernetes namespace you are deploying to
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Azure Login
+        uses: Azure/login@v1
+        with:
+          # See: https://github.com/jasoncabot-ms/arc-for-kubernetes/tree/main/00-setup
+          creds: ${{ secrets[github.event.inputs.credentials] }}
+
+      - name: Deploy Azure Resources
+        id: deploy_infrastructure
+        run: |
+          # Per-repository secrets
+          APP_ID=$(echo '${{ secrets[github.event.inputs.credentials] }}' | jq -r '.clientId')
+          echo "::add-mask::$APP_ID"
+          PASSWORD=$(echo '${{ secrets[github.event.inputs.credentials] }}' | jq -r '.clientSecret')
+          echo "::add-mask::$PASSWORD"
+          TENANT_ID=$(echo '${{ secrets[github.event.inputs.credentials] }}' | jq -r '.tenantId')
+          echo "::add-mask::$TENANT_ID"
+          AAD_ADMIN_OBJECTID=${{ github.event.inputs.aad_admin_objectid }}
+          echo "::add-mask::$AAD_ADMIN_OBJECTID"
+          APPLICATION_ID=${{ github.event.inputs.app_id }}
+          echo "::add-mask::$APPLICATION_ID"
+
+          # Assume that credentials have limited scope to a single resource group, so just pick the
+          # first thing we can access and use that as the resource group to deploy to :)
+          RG=$(az group list -o tsv --query '[0].name')
+          echo "::add-mask::$RG"
+          echo "::set-output name=resource_group::$RG"
+          SUBSCRIPTION_ID=$(az account show --query 'id' -o tsv)
+          echo "::add-mask::$SUBSCRIPTION_ID"
+
+          DEPLOYMENT=$(az deployment group create -g "$RG" -n "${{ github.event_name }}-${GITHUB_SHA:0:7}-${{ github.run_id }}" --template-file "01-app-setup/azuredeploy.json" --parameters aad_admin_objectid="${{ github.event.inputs.aad_admin_objectid }}")
+          SQL_CONNECTION_STRING=$(echo $DEPLOYMENT | jq -r '.properties.outputs.sqlConnectionString.value')
+
+          echo "::set-output name=apiIdentityResourceId::$(echo $DEPLOYMENT | jq -r '.properties.outputs.apiIdentityResourceId.value')"
+          echo "::set-output name=apiIdentityClientId::$(echo $DEPLOYMENT | jq -r '.properties.outputs.apiIdentityClientId.value')"
+          echo "::set-output name=apiIdentityName::$(echo $DEPLOYMENT | jq -r '.properties.outputs.apiIdentityName.value')"
+          echo "::set-output name=uiIdentityResourceId::$(echo $DEPLOYMENT | jq -r '.properties.outputs.uiIdentityResourceId.value')"
+          echo "::set-output name=uiIdentityClientId::$(echo $DEPLOYMENT | jq -r '.properties.outputs.uiIdentityClientId.value')"
+          echo "::set-output name=uiIdentityName::$(echo $DEPLOYMENT | jq -r '.properties.outputs.uiIdentityName.value')"
+          echo "::set-output name=sqlConnectionString::\"$SQL_CONNECTION_STRING\""
+          echo "::set-output name=storageURI::$(echo $DEPLOYMENT | jq -r '.properties.outputs.storageURI.value')"
+          echo "::set-output name=urlPrefix::$(az network public-ip list -g $RG --query '[].join(`.`, [dnsSettings.domainNameLabel,location])' -o tsv)"
+
+      - name: Role Assignments
+        run: |
+          RESOURCE_GROUP=${{ steps.deploy_infrastructure.outputs.resource_group }}
+          STORAGE=$(az storage account list -g $RESOURCE_GROUP --query '[0].id' -o tsv)
+
+          # Allow the API to write to Blob Storage
+          PRINCIPAL_ID=$(az resource show --id ${{ steps.deploy_infrastructure.outputs.apiIdentityResourceId }} --query 'properties.principalId' -o tsv)
+          az role assignment create --role "Storage Blob Data Contributor" --assignee-object-id $PRINCIPAL_ID --assignee-principal-type ServicePrincipal --scope $STORAGE
+
+      - name: Workaround for helm not supporting comma in set command
+        id: helm_workaround
+        run: |
+          WORKAROUND=${{ steps.deploy_infrastructure.outputs.sqlConnectionString }}
+          WORKAROUND=${WORKAROUND/,/\\\,} # https://github.com/helm/helm/issues/1556
+          echo "::set-output name=sqlConnectionString::$WORKAROUND"
+
+      - name: Create App Specific Kubernetes Manifests
+        uses: Azure/k8s-bake@v1
+        id: bake
+        with:
+          renderEngine: 'helm'
+          helmChart: './app-config/'
+          overrides: |
+            namespace:${{ github.event.inputs.k8s_namespace }}
+            applicationClientID:${{ github.event.inputs.app_id }}
+            urlPrefix:${{ steps.deploy_infrastructure.outputs.urlPrefix }}
+            storageURI:${{ steps.deploy_infrastructure.outputs.storageURI }}
+            sqlConnectionString:${{ steps.helm_workaround.outputs.sqlConnectionString }}
+            identity.api.resource:${{ steps.deploy_infrastructure.outputs.apiIdentityResourceId }}
+            identity.api.client:${{ steps.deploy_infrastructure.outputs.apiIdentityClientId }}
+            identity.ui.resource:${{ steps.deploy_infrastructure.outputs.uiIdentityResourceId }}
+            identity.ui.client:${{ steps.deploy_infrastructure.outputs.uiIdentityClientId }}
+          helm-version: 'latest'
+          silent: 'true'
+
+      - name: Publish manifest files
+        uses: actions/upload-artifact@v2
+        with:
+          name: 'App Manifest Bundle'
+          path: ${{ steps.bake.outputs.manifestsBundle }}
+
+      - name: Next Steps
+        run: |
+          CONN=${{ steps.deploy_infrastructure.outputs.sqlConnectionString }}
+          echo "Connect to your SQL server using the connection string $CONN"
+          echo "Run the following SQL to allow access from the API"
+          echo "CREATE USER [${{ steps.deploy_infrastructure.outputs.apiIdentityName }}] FROM EXTERNAL PROVIDER;"
+          echo "ALTER ROLE db_datareader ADD MEMBER [${{ steps.deploy_infrastructure.outputs.apiIdentityName }}];"
+          echo "ALTER ROLE db_datawriter ADD MEMBER [${{ steps.deploy_infrastructure.outputs.apiIdentityName }}];"
+          cat ./scripts/schema.sql

@@ -1,0 +1,20 @@
+CREATE TABLE Items
+(
+    Id INT NOT NULL IDENTITY PRIMARY KEY,
+    Name VARCHAR(50) NOT NULL,
+    Description VARCHAR(2000) NOT NULL,
+    ImageURI VARCHAR(2000) NOT NULL
+);
+
+CREATE TABLE Reviews
+(
+    Id INT NOT NULL IDENTITY PRIMARY KEY,
+    Text VARCHAR(2000) NOT NULL,
+    CreatedBy VARCHAR(50) NOT NULL,
+    CreatedById VARCHAR(50) NOT NULL,
+    CreatedByTenantId VARCHAR(36) NOT NULL,
+    Rating INT NOT NULL,
+    ItemId INT NOT NULL REFERENCES Items
+);
+
+CREATE INDEX reviews_for_item ON Reviews(ItemId);

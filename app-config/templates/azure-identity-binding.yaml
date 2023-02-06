@@ -1,0 +1,19 @@
+---
+apiVersion: "aadpodidentity.k8s.io/v1"
+kind: AzureIdentityBinding
+metadata:
+  name: reviewer-api-binding
+  namespace: {{ .Values.namespace }}
+spec:
+  azureIdentity: reviewer-api-identity
+  selector: reviewer-api-label
+---
+apiVersion: "aadpodidentity.k8s.io/v1"
+kind: AzureIdentityBinding
+metadata:
+  name: reviewer-ui-binding
+  namespace: {{ .Values.namespace }}
+spec:
+  azureIdentity: reviewer-ui-identity
+  selector: reviewer-ui-label
+---
